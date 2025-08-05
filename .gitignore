@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Frontend build output (optional)
+dist/
+build/
+
+# VS Code & editor stuff
+.vscode/
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db

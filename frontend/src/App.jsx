@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 export default function App() {
   const [recording, setRecording] = useState(false);
-  const [awaitingTTS, setAwaitingTTS] = useState(false); // Wait for TTS completion
+  const [awaitingTTS, setAwaitingTTS] = useState(false);
+  const [chat, setChat] = useState([]);
+  const [wsStatus, setWsStatus] = useState("connecting"); // "connected", "disconnected"
+
   const wsRef = useRef(null);
   const mediaRecorderRef = useRef(null);
-
   const audioQueueRef = useRef([]);
   const currentAudioElementRef = useRef(null);
   const isPlayingAudioRef = useRef(false);
@@ -44,32 +46,35 @@ export default function App() {
 
   const connectWebSocket = useCallback(() => {
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-      console.log("✅ WebSocket already open or connecting, skipping re-initialization.");
       return;
     }
 
-    console.log("Attempting to connect WebSocket...");
+    console.log("🔌 Connecting to WebSocket...");
+    setWsStatus("connecting");
     const ws = new WebSocket("ws://localhost:8000/ws/audio");
     wsRef.current = ws;
 
-    ws.onopen = () => console.log("✅ WebSocket connected");
+    ws.onopen = () => {
+      console.log("✅ WebSocket connected");
+      setWsStatus("connected");
+    };
 
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
 
-        if (msg.type === "tts" && msg.audio_base64) {
-          console.log("🔊 Received TTS:", msg.sentence || "");
+        if (msg.type === "transcript") {
+          setChat(prev => [...prev, { sender: "user", text: msg.text }]);
+        } else if (msg.type === "tts") {
+          setChat(prev => [...prev, { sender: "ai", text: msg.sentence }]);
+
           const audioBytes = Uint8Array.from(atob(msg.audio_base64), c => c.charCodeAt(0));
           const blob = new Blob([audioBytes], { type: "audio/wav" });
           const url = URL.createObjectURL(blob);
           audioQueueRef.current.push(url);
           playNextAudio();
         } else if (msg.type === "done") {
-          console.log("✅ Backend indicated TTS stream is complete.");
-          setAwaitingTTS(false); // Done waiting
-        } else {
-          console.log("📩 Other message:", msg);
+          setAwaitingTTS(false);
         }
       } catch (err) {
         console.error("❌ Failed to parse message", err);
@@ -77,13 +82,15 @@ export default function App() {
     };
 
     ws.onerror = (err) => {
-      console.error("❌ WebSocket error", err);
+      console.warn("⚠️ WebSocket error:", err.message || err);
     };
 
     ws.onclose = (event) => {
-      console.log(`❎ WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+      console.warn(`❌ WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+      setWsStatus("disconnected");
+
       if (event.code !== 1000 && event.code !== 1001) {
-        console.log("Attempting to reconnect WebSocket in 3 seconds...");
+        console.log("♻️ Reconnecting in 3 seconds...");
         setTimeout(connectWebSocket, 3000);
       }
     };
@@ -91,21 +98,8 @@ export default function App() {
 
   useEffect(() => {
     connectWebSocket();
-
     return () => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.close(1000, "Component unmounting");
-      }
-
-      audioQueueRef.current.forEach(url => URL.revokeObjectURL(url));
-      audioQueueRef.current = [];
-
-      if (currentAudioElementRef.current) {
-        currentAudioElementRef.current.pause();
-        currentAudioElementRef.current.src = "";
-        currentAudioElementRef.current.load();
-        currentAudioElementRef.current = null;
-      }
+      wsRef.current?.close(1000, "Component unmounting");
     };
   }, [connectWebSocket]);
 
@@ -124,50 +118,68 @@ export default function App() {
       recorder.onstop = () => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send("<END>");
-          console.log("📤 Sent <END> to backend");
-          setAwaitingTTS(true); // Start waiting for response
+          setAwaitingTTS(true);
         }
         stream.getTracks().forEach(track => track.stop());
       };
 
       recorder.start(250);
       setRecording(true);
-      console.log("🎙️ Recording started");
     } catch (error) {
-      console.error("❌ Error starting recording:", error);
-      alert("Could not start recording. Please ensure microphone access is granted.");
+      alert("Microphone permission error.");
     }
   };
 
   const stopRecording = () => {
     mediaRecorderRef.current?.stop();
     setRecording(false);
-    console.log("🛑 Recording stopped");
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full">
-        <h1 className="text-3xl font-bold text-gray-800 mb-6">🎙️ Voice Assistant</h1>
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4 font-sans">
+      <div className="w-full max-w-xl space-y-4">
+        <h1 className="text-3xl font-bold text-center text-gray-800">🎙️ Voice Chat</h1>
 
-        {recording ? (
-          <button
-            onClick={stopRecording}
-            className="bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75"
-          >
-            ⏹️ Stop Recording
-          </button>
-        ) : (
-          <button
-            onClick={startRecording}
-            disabled={awaitingTTS} // Prevent new recording during TTS playback
-            className={`${
-              awaitingTTS ? "bg-gray-400 cursor-not-allowed" : "bg-blue-500 hover:bg-blue-600"
-            } text-white font-semibold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75`}
-          >
-            🎤 {awaitingTTS ? "Waiting for TTS..." : "Start Recording"}
-          </button>
-        )}
+        <div className="text-center text-sm text-gray-600">
+          WebSocket Status:{" "}
+          <span className={
+            wsStatus === "connected"
+              ? "text-green-600"
+              : wsStatus === "connecting"
+              ? "text-yellow-600"
+              : "text-red-600"
+          }>
+            {wsStatus}
+          </span>
+        </div>
+
+        <div className="bg-white p-4 rounded-lg shadow max-h-[400px] overflow-y-auto space-y-2">
+          {chat.map((msg, i) => (
+            <div key={i} className={`text-left p-2 rounded ${msg.sender === "user" ? "bg-blue-100 text-blue-800 self-start" : "bg-green-100 text-green-800 self-end"}`}>
+              <strong>{msg.sender === "user" ? "You" : "AI"}:</strong> {msg.text}
+            </div>
+          ))}
+        </div>
+
+        <div className="text-center">
+          {recording ? (
+            <button onClick={stopRecording} className="bg-red-500 text-white py-2 px-4 rounded-lg">
+              ⏹️ Stop Recording
+            </button>
+          ) : (
+            <button
+              onClick={startRecording}
+              disabled={awaitingTTS || wsStatus !== "connected"}
+              className={`py-2 px-4 rounded-lg ${
+                awaitingTTS || wsStatus !== "connected"
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-blue-500 text-white"
+              }`}
+            >
+              🎤 {awaitingTTS ? "Waiting for TTS..." : "Start Recording"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -10,7 +10,7 @@ langchain-community
 langchain-google-genai>=1.0.0
 langchain-openai
 
-fastapi
+fastapi[standard]
 uvicorn
 python-multipart
 aiofiles

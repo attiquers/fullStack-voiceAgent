@@ -66,7 +66,27 @@ export default function App() {
         if (msg.type === "transcript") {
           setChat(prev => [...prev, { sender: "user", text: msg.text }]);
         } else if (msg.type === "tts") {
-          setChat(prev => [...prev, { sender: "ai", text: msg.sentence }]);
+          // Ensure sentence ends with a period
+          let sentence = msg.sentence.trim();
+          if (!/[.!?]$/.test(sentence)) {
+            sentence += ".";
+          }
+
+          setChat(prev => {
+            if (prev.length > 0 && prev[prev.length - 1].sender === "ai") {
+              const updated = [...prev];
+              const lastText = updated[updated.length - 1].text;
+
+              // Append only if the sentence is not already included
+              if (!lastText.endsWith(sentence)) {
+                updated[updated.length - 1].text += " " + sentence;
+              }
+
+              return updated;
+            } else {
+              return [...prev, { sender: "ai", text: sentence }];
+            }
+          });
 
           const audioBytes = Uint8Array.from(atob(msg.audio_base64), c => c.charCodeAt(0));
           const blob = new Blob([audioBytes], { type: "audio/wav" });
@@ -80,6 +100,8 @@ export default function App() {
         console.error("❌ Failed to parse message", err);
       }
     };
+
+
 
     ws.onerror = (err) => {
       console.warn("⚠️ WebSocket error:", err.message || err);

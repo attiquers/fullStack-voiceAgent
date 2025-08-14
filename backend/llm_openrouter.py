@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage
 import streamlit as st
 
 def get_response(user_input: str) -> str:
-    api_key = st.secrets["OPENROUTER_API_KEY"]
+    api_key = "OLLAMA KEY HERE"
 
     # Use OpenRouter endpoint with Gemma
     llm = ChatOpenAI(

@@ -31,7 +31,7 @@ Follow these steps to get the application up and running on your local machine.
     1.  **Install Ollama:** Visit the [Ollama website](https://ollama.com/) and follow the installation instructions for your operating system.
     2.  **Pull a Model:** Once installed, open your terminal and download a model, for example, `llama3`:
         ```bash
-        ollama pull llama3
+        ollama run gemma3:1b
         ```
     3.  Ensure the Ollama server is running in the background.
 
